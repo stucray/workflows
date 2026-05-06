@@ -20,10 +20,18 @@
 # binary or quote-containing values. Each key is exported to the verify step
 # (with the value masked in logs via ::add-mask::).
 #
+# Java version: read from `<java.version>` in pom.xml (no input).
+#
 # Artifacts uploaded:
 # - pmd-complexity-report (always, 30d) — `target/pmd.xml` + reports/xref
 # - jacoco-report (on failure, 14d) — coverage diagnosis when verify fails
 # - playwright-artifacts (on failure, 14d) — traces + screenshots from UI tests
+#
+# Note: the JDK-setup and Playwright-cache steps are inlined here rather than
+# extracted into composite actions because GitHub Actions resolves `./`
+# action paths against the caller's repo, not the reusable workflow's, so
+# local composites can't be referenced from a reusable workflow without
+# checking out the host repo first.
 
 name: CI for Spring Boot + Maven projects
 
@@ -50,11 +58,34 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Set up Java + Maven
-        uses: ./.github/actions/setup-java-maven
+      # Pull the project's Java version straight from pom.xml so the build
+      # always matches what the project declares.
+      - name: Read Java version from pom.xml
+        id: jv
+        run: |
+          set -euo pipefail
+          v=$(grep -m1 '<java.version>' pom.xml | sed 's/.*>\(.*\)<.*/\1/')
+          [ -n "$v" ] || { echo "::error::Could not find <java.version> property in pom.xml"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
 
+      - name: Set up JDK (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.jv.outputs.version }}
+          cache: maven
+
+      # Cache Playwright browser binaries (~150 MB Chromium). Keyed on
+      # pom.xml so a Playwright version bump invalidates the cache;
+      # restore-keys fall back to any prior cache for the same OS to
+      # avoid a full miss when unrelated deps change.
       - name: Cache Playwright browsers
-        uses: ./.github/actions/setup-playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       # Parse the optional test_env_json secret into individual env vars on
       # GITHUB_ENV. Each value is added to the log mask so it can't leak
