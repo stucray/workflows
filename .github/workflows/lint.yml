@@ -1,0 +1,30 @@
+# Lints every workflow file in this repo with actionlint on PR and pushes to
+# main. Catches YAML syntax errors, unknown contexts, expression typos, and
+# shellcheck issues in `run:` blocks before any consumer is exposed to them.
+
+name: Lint workflows
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      # Pinned version download — explicit version makes the lint result
+      # reproducible across runs and easy to bump deliberately.
+      - name: Run actionlint
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/actionlint.tgz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+          /tmp/actionlint -color
