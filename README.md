@@ -21,6 +21,7 @@ consumers that haven't migrated.
 |---|---|---|
 | [close-completed-parent-issue](.github/workflows/close-completed-parent-issue.yml) | Auto-close a parent issue when its last open sub-issue is closed | Any |
 | [ci-spring-boot-maven](.github/workflows/ci-spring-boot-maven.yml) | Build, test, static analysis (mvn verify); uploads PMD, JaCoCo, Playwright artifacts | Spring Boot + Maven |
+| [publish-image-spring-boot-maven](.github/workflows/publish-image-spring-boot-maven.yml) | Multi-arch (amd64 + arm64) GHCR image build via Paketo + manifest stitch | Spring Boot + Maven |
 
 ## Versioning
 
