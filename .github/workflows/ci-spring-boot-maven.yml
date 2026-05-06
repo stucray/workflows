@@ -1,0 +1,109 @@
+# CI for Spring Boot + Maven projects. Runs `mvn verify` (compile +
+# Error Prone + NullAway + tests + JaCoCo + PMD report) on a single
+# Ubuntu runner with Maven dep caching and Playwright browser caching.
+#
+# Caller usage:
+#
+#   on:
+#     push:
+#       branches: [main]
+#     pull_request:
+#       branches: [main]
+#   jobs:
+#     ci:
+#       uses: stucray/workflows/.github/workflows/ci-spring-boot-maven.yml@v1
+#       secrets:
+#         test_env_json: '{"MY_TEST_KEK":"${{ secrets.MY_TEST_KEK_VALUE }}"}'
+#
+# `test_env_json` is optional — supply only if `mvn verify` needs project-
+# specific env vars (e.g. test KEKs). Values must be JSON-safe; base64-encode
+# binary or quote-containing values. Each key is exported to the verify step
+# (with the value masked in logs via ::add-mask::).
+#
+# Artifacts uploaded:
+# - pmd-complexity-report (always, 30d) — `target/pmd.xml` + reports/xref
+# - jacoco-report (on failure, 14d) — coverage diagnosis when verify fails
+# - playwright-artifacts (on failure, 14d) — traces + screenshots from UI tests
+
+name: CI for Spring Boot + Maven projects
+
+on:
+  workflow_call:
+    secrets:
+      test_env_json:
+        description: Optional JSON object mapping env-var name to value, exported to mvn verify.
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: build, test, static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Java + Maven
+        uses: ./.github/actions/setup-java-maven
+
+      - name: Cache Playwright browsers
+        uses: ./.github/actions/setup-playwright-cache
+
+      # Parse the optional test_env_json secret into individual env vars on
+      # GITHUB_ENV. Each value is added to the log mask so it can't leak
+      # through subsequent step output.
+      - name: Export test env vars (if any)
+        env:
+          TEST_ENV_JSON: ${{ secrets.test_env_json }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TEST_ENV_JSON:-}" ]; then
+            echo "No test_env_json supplied; skipping."
+            exit 0
+          fi
+          while IFS=$'\t' read -r k v; do
+            echo "::add-mask::$v"
+            echo "$k=$v" >> "$GITHUB_ENV"
+            echo "Exported $k (value masked)."
+          done < <(echo "$TEST_ENV_JSON" | jq -r 'to_entries[] | "\(.key)\t\(.value)"')
+
+      - name: Verify (compile + Error Prone + NullAway + tests + JaCoCo + PMD report)
+        run: ./mvnw -B -ntp verify
+
+      - name: Upload PMD complexity report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pmd-complexity-report
+          path: |
+            target/pmd.xml
+            target/reports/pmd.html
+            target/reports/xref
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload JaCoCo report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Playwright traces and screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-artifacts
+          path: target/playwright-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

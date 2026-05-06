@@ -1,0 +1,21 @@
+# Caches the Playwright browser binaries (~150 MB Chromium) downloaded on
+# first `Playwright.create()`. Keyed on pom.xml so a Playwright version bump
+# invalidates the cache; restore-keys fall back to any prior cache for the
+# same OS to avoid a full miss when unrelated deps change.
+#
+# No-op cost: if the consumer doesn't use Playwright, ~/.cache/ms-playwright
+# is empty, the cache write is a few KB, and there's no measurable overhead.
+
+name: Cache Playwright browsers
+description: Caches Playwright browser binaries keyed on pom.xml hash.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ hashFiles('pom.xml') }}
+        restore-keys: |
+          playwright-${{ runner.os }}-

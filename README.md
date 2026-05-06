@@ -20,6 +20,7 @@ consumers that haven't migrated.
 | Workflow | Purpose | Stack |
 |---|---|---|
 | [close-completed-parent-issue](.github/workflows/close-completed-parent-issue.yml) | Auto-close a parent issue when its last open sub-issue is closed | Any |
+| [ci-spring-boot-maven](.github/workflows/ci-spring-boot-maven.yml) | Build, test, static analysis (mvn verify); uploads PMD, JaCoCo, Playwright artifacts | Spring Boot + Maven |
 
 ## Versioning
 
