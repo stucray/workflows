@@ -19,8 +19,7 @@ consumers that haven't migrated.
 
 | Workflow | Purpose | Stack |
 |---|---|---|
-
-_(None yet — first lands in PR #1.)_
+| [close-completed-parent-issue](.github/workflows/close-completed-parent-issue.yml) | Auto-close a parent issue when its last open sub-issue is closed | Any |
 
 ## Versioning
 
