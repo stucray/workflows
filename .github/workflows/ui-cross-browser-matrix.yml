@@ -1,0 +1,178 @@
+# Cross-browser UI tests for Spring Boot + Maven projects. Runs the
+# project's Playwright UI tests under a matrix of browser engines
+# (Chrome stable, WebKit, Firefox by default) by setting
+# `-Dplaywright.browser=<engine>` on each `mvn verify` invocation and
+# filtering to JUnit 5 tests carrying a configurable @Tag (default
+# `cross-browser`).
+#
+# Why Chrome (not just Chromium): Playwright's bundled Chromium is a
+# stripped build with many features disabled. Several real-Chrome-only
+# behaviours never reproduce against it — most notably the
+# `/.well-known/appspecific/com.chrome.devtools.json` workspace-folders
+# probe that stable Chrome fires on localhost connections. WebKit and
+# Firefox catch separate categories of engine-rendering / cookie / CSRF
+# differences.
+#
+# Caller usage:
+#
+#   on:
+#     pull_request:
+#       branches: [main]
+#     push:
+#       branches: [main]
+#   jobs:
+#     cross-browser:
+#       uses: stucray/workflows/.github/workflows/ui-cross-browser-matrix.yml@v1
+#       secrets:
+#         test_env_json: '{"MY_TEST_KEK":"${{ secrets.MY_TEST_KEK_VALUE }}"}'
+#
+# The project must:
+# - Tag the tests it wants to run cross-browser with @Tag("cross-browser")
+#   (or whatever value is supplied via the `tag` input).
+# - Read `-Dplaywright.browser=chromium|chrome|webkit|firefox` somewhere in
+#   its Playwright bootstrap so the matrix can switch engines.
+#
+# Inputs:
+# - `browsers` (JSON array, default ["chrome","webkit","firefox"]):
+#   engines to run. Omit `chromium` — that's already covered by the main
+#   CI workflow and re-running it here is duplicate cost.
+# - `tag` (string, default "cross-browser"): JUnit 5 tag to filter on.
+# - `timeout_minutes` (number, default 20): per-matrix-job timeout.
+#
+# Artifacts uploaded per matrix job (on failure only):
+# - playwright-artifacts-<engine> (14d) — traces + screenshots, named by
+#   engine to avoid collisions across the matrix.
+
+name: Cross-browser UI tests for Spring Boot + Maven projects
+
+on:
+  workflow_call:
+    inputs:
+      browsers:
+        description: JSON array of Playwright engines to run.
+        type: string
+        default: '["chrome","webkit","firefox"]'
+        required: false
+      tag:
+        description: JUnit 5 @Tag to filter tests on.
+        type: string
+        default: 'cross-browser'
+        required: false
+      timeout_minutes:
+        description: Per-matrix-job timeout.
+        type: number
+        default: 20
+        required: false
+    secrets:
+      test_env_json:
+        description: Optional JSON object mapping env-var name to value, exported to mvn verify.
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-browser-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cross-browser:
+    name: ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    strategy:
+      # One engine failing must not mask another engine's failure — the
+      # whole point of the matrix is to surface engine-specific drift.
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJSON(inputs.browsers) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Pull the project's Java version straight from pom.xml so the build
+      # always matches what the project declares.
+      - name: Read Java version from pom.xml
+        id: jv
+        run: |
+          set -euo pipefail
+          v=$(grep -m1 '<java.version>' pom.xml | sed 's/.*>\(.*\)<.*/\1/')
+          [ -n "$v" ] || { echo "::error::Could not find <java.version> property in pom.xml"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.jv.outputs.version }}
+          cache: maven
+
+      # Per-engine cache slot so cross-browser runs don't churn each other's
+      # binaries. Chromium isn't in this matrix; webkit and firefox are
+      # ~80MB each; the chrome channel downloads stable Chrome to the same
+      # cache directory.
+      - name: Cache Playwright browsers (${{ matrix.browser }})
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('pom.xml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-${{ matrix.browser }}-
+
+      # Parse the optional test_env_json secret into individual env vars on
+      # GITHUB_ENV. Each value is added to the log mask so it can't leak
+      # through subsequent step output.
+      - name: Export test env vars (if any)
+        env:
+          TEST_ENV_JSON: ${{ secrets.test_env_json }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${TEST_ENV_JSON:-}" ]; then
+            echo "No test_env_json supplied; skipping."
+            exit 0
+          fi
+          while IFS=$'\t' read -r k v; do
+            echo "::add-mask::$v"
+            echo "$k=$v" >> "$GITHUB_ENV"
+            echo "Exported $k (value masked)."
+          done < <(echo "$TEST_ENV_JSON" | jq -r 'to_entries[] | "\(.key)\t\(.value)"')
+
+      # Two-step Playwright bootstrap: compile-tests populates the
+      # test-scope classpath that exec:java needs to resolve
+      # com.microsoft.playwright.CLI; the install step then downloads the
+      # engine binaries and `apt-get install`s its system libs (the
+      # `--with-deps` flag).
+      - name: Compile tests
+        run: ./mvnw -B -ntp test-compile
+
+      - name: Install Playwright browser + OS deps (${{ matrix.browser }})
+        run: |
+          ./mvnw -B -ntp exec:java \
+            -D exec.mainClass=com.microsoft.playwright.CLI \
+            -D exec.args="install --with-deps ${{ matrix.browser }}" \
+            -D exec.classpathScope=test
+
+      # `-Dgroups=<tag>` filters both surefire (zero hits — none of the
+      # unit tests are tagged) and failsafe (the 10 tagged journey tests)
+      # via JUnit 5's `junit.jupiter.tags.included`. Skip JaCoCo, PMD, and
+      # exec-bound report scripts — main CI is the canonical place for
+      # those signals, this run is purely about engine coverage.
+      - name: Run cross-browser tests on ${{ matrix.browser }}
+        run: |
+          ./mvnw -B -ntp verify \
+            -Dgroups=${{ inputs.tag }} \
+            -Dplaywright.browser=${{ matrix.browser }} \
+            -DfailIfNoTests=false \
+            -Djacoco.skip=true \
+            -Dpmd.skip=true \
+            -Dexec.skip=true
+
+      - name: Upload Playwright traces and screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-artifacts-${{ matrix.browser }}
+          path: target/playwright-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
