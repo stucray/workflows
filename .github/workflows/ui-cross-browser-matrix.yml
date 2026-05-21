@@ -63,6 +63,14 @@ on:
         type: number
         default: 20
         required: false
+      java_distribution:
+        description: |
+          actions/setup-java `distribution` value. Defaults to `liberica`
+          (matches Paketo's default JDK so CI + prod are aligned). Override
+          to `temurin`, `corretto`, etc. if the project pins a different JVM.
+        type: string
+        default: liberica
+        required: false
     secrets:
       test_env_json:
         description: Optional JSON object mapping env-var name to value, exported to mvn verify.
@@ -100,10 +108,10 @@ jobs:
           [ -n "$v" ] || { echo "::error::Could not find <java.version> property in pom.xml"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Set up JDK (Temurin)
+      - name: Set up JDK (${{ inputs.java_distribution }})
         uses: actions/setup-java@v5
         with:
-          distribution: temurin
+          distribution: ${{ inputs.java_distribution }}
           java-version: ${{ steps.jv.outputs.version }}
           cache: maven
 

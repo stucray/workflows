@@ -39,6 +39,16 @@ on:
         type: string
         required: false
         default: ''
+      java_distribution:
+        description: |
+          actions/setup-java `distribution` value used for the local JDK that
+          runs `mvn spring-boot:build-image`. Defaults to `liberica`, which
+          matches Paketo's own JDK provider inside the final image — so the
+          build-time and runtime JDK are the same distribution. Override
+          if the project pins a different JVM.
+        type: string
+        default: liberica
+        required: false
 
 permissions:
   contents: read
@@ -83,12 +93,14 @@ jobs:
           [ -n "$v" ] || { echo "::error::Could not find <java.version> property in pom.xml"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      # Temurin publishes both amd64 and arm64 builds, so the same step
-      # works on either runner.
-      - name: Set up JDK (Temurin)
+      # The default distribution (Liberica) publishes both amd64 and arm64
+      # builds, so the same step works on either runner. If a project
+      # overrides `java_distribution`, verify its build coverage on this
+      # matrix's arches.
+      - name: Set up JDK (${{ inputs.java_distribution }})
         uses: actions/setup-java@v5
         with:
-          distribution: temurin
+          distribution: ${{ inputs.java_distribution }}
           java-version: ${{ steps.jv.outputs.version }}
           cache: maven
 

@@ -21,6 +21,9 @@
 # (with the value masked in logs via ::add-mask::).
 #
 # Java version: read from `<java.version>` in pom.xml (no input).
+# Java distribution: defaults to BellSoft Liberica (matches Paketo's default
+# JDK provider so CI and prod run the same OpenJDK distribution). Override
+# via the `java_distribution` input.
 #
 # Artifacts uploaded:
 # - pmd-complexity-report (always, 30d) — `target/pmd.xml` + reports/xref
@@ -37,6 +40,18 @@ name: CI for Spring Boot + Maven projects
 
 on:
   workflow_call:
+    inputs:
+      java_distribution:
+        description: |
+          actions/setup-java `distribution` value. Defaults to `liberica`
+          (BellSoft Liberica), which matches the JDK that Paketo buildpacks
+          install into the production image — so CI and prod run the same
+          OpenJDK distribution by default. Override to `temurin`, `corretto`,
+          `zulu`, `microsoft`, `oracle`, `dragonwell`, `sapmachine`,
+          `graalvm`, or `jetbrains` if a project pins a different JVM.
+        type: string
+        default: liberica
+        required: false
     secrets:
       test_env_json:
         description: Optional JSON object mapping env-var name to value, exported to mvn verify.
@@ -68,10 +83,10 @@ jobs:
           [ -n "$v" ] || { echo "::error::Could not find <java.version> property in pom.xml"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Set up JDK (Temurin)
+      - name: Set up JDK (${{ inputs.java_distribution }})
         uses: actions/setup-java@v5
         with:
-          distribution: temurin
+          distribution: ${{ inputs.java_distribution }}
           java-version: ${{ steps.jv.outputs.version }}
           cache: maven
 

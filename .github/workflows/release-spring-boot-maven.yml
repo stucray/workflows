@@ -57,6 +57,15 @@ on:
         type: boolean
         required: false
         default: false
+      java_distribution:
+        description: |
+          actions/setup-java `distribution` value used to run the release-time
+          `mvn verify`. Defaults to `liberica` (matches Paketo's default JDK
+          provider). Should match the project's CI distribution so the
+          release build doesn't pass under a different JVM than CI did.
+        type: string
+        default: liberica
+        required: false
     secrets:
       release_token:
         description: PAT with contents:write that can bypass branch protection on main.
@@ -102,10 +111,10 @@ jobs:
           [ -n "$v" ] || { echo "::error::Could not find <java.version> property in pom.xml"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Set up JDK (Temurin)
+      - name: Set up JDK (${{ inputs.java_distribution }})
         uses: actions/setup-java@v5
         with:
-          distribution: temurin
+          distribution: ${{ inputs.java_distribution }}
           java-version: ${{ steps.jv.outputs.version }}
           cache: maven
 
