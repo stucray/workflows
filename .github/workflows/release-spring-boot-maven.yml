@@ -184,9 +184,18 @@ jobs:
         run: ./mvnw -B -ntp verify
 
       # Commit the release-version pom and create the annotated `vX.Y.Z` tag.
+      # `git add -u` (not `git add pom.xml`) so child-module poms ALSO get
+      # staged — `versions:set -DprocessAllModules=true` above rewrites
+      # every child's <parent><version> block, not just the root pom. With
+      # the narrower `git add pom.xml`, those child changes are silently
+      # discarded and the tag's tree ends up with root at the new version
+      # but children's parent refs pointing at the previous version (which
+      # no longer exists). Caught after the verify step had already run
+      # against the in-memory children (which was healthy), so the bug
+      # only surfaces on a fresh checkout of the tag.
       - name: Commit and tag release
         run: |
-          git add pom.xml
+          git add -u
           git commit -m "Release ${{ steps.vers.outputs.release }}"
           git tag -a "v${{ steps.vers.outputs.release }}" -m "Release ${{ steps.vers.outputs.release }}"
 
@@ -195,9 +204,10 @@ jobs:
         run: ./mvnw -B -ntp org.codehaus.mojo:versions-maven-plugin:2.16.2:set -DnewVersion=${{ steps.vers.outputs.next }} -DgenerateBackupPoms=false -DprocessAllModules=true
 
       # Commit the snapshot bump (sits directly after the release commit).
+      # Same `git add -u` rationale as the release-commit step above.
       - name: Commit next snapshot
         run: |
-          git add pom.xml
+          git add -u
           git commit -m "Prepare for next development iteration: ${{ steps.vers.outputs.next }}"
 
       # Atomic push: both new commits + the tag land together, or nothing
