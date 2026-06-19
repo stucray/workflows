@@ -95,7 +95,7 @@ jobs:
       # restore-keys fall back to any prior cache for the same OS to
       # avoid a full miss when unrelated deps change.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pom.xml') }}
