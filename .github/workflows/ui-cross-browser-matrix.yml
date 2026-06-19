@@ -120,7 +120,7 @@ jobs:
       # ~80MB each; the chrome channel downloads stable Chrome to the same
       # cache directory.
       - name: Cache Playwright browsers (${{ matrix.browser }})
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('pom.xml') }}
