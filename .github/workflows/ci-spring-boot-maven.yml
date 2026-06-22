@@ -1,6 +1,7 @@
 # CI for Spring Boot + Maven projects. Runs `mvn verify` (compile +
 # Error Prone + NullAway + tests + JaCoCo + PMD report) on a single
-# Ubuntu runner with Maven dep caching and Playwright browser caching.
+# runner (GitHub-hosted by default) with Maven dep caching and Playwright
+# browser caching.
 #
 # Caller usage:
 #
@@ -24,6 +25,8 @@
 # Java distribution: defaults to BellSoft Liberica (matches Paketo's default
 # JDK provider so CI and prod run the same OpenJDK distribution). Override
 # via the `java_distribution` input.
+# Runner: defaults to `ubuntu-latest` (GitHub-hosted). Override via the
+# `runner_label` input to run on a self-hosted runner.
 #
 # Artifacts uploaded:
 # - pmd-complexity-report (always, 30d) — `target/pmd.xml` + reports/xref
@@ -52,6 +55,15 @@ on:
         type: string
         default: liberica
         required: false
+      runner_label:
+        description: |
+          Label of the runner to execute on. Defaults to `ubuntu-latest`
+          (GitHub-hosted). Set to a self-hosted runner's label to run on your
+          own runner — e.g. to avoid hosted-runner minutes or keep build
+          caches warm between runs.
+        type: string
+        default: ubuntu-latest
+        required: false
     secrets:
       test_env_json:
         description: Optional JSON object mapping env-var name to value, exported to mvn verify.
@@ -67,7 +79,7 @@ concurrency:
 jobs:
   verify:
     name: build, test, static analysis
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 25
     steps:
       - name: Checkout

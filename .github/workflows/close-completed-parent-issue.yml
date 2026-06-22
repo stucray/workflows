@@ -21,11 +21,23 @@
 # `github.repository` so multiple consumer repos don't serialise across
 # each other. Within a single repo, runs serialise so a flurry of closes
 # can't race into duplicate parent-close attempts.
+#
+# Runner: defaults to `ubuntu-latest`; set the optional `runner_label` input
+# to run on a self-hosted runner.
 
 name: Close completed parent issue
 
 on:
   workflow_call:
+    inputs:
+      runner_label:
+        description: |
+          Label of the runner to execute on. Defaults to `ubuntu-latest`
+          (GitHub-hosted). Set to a self-hosted runner's label to run on your
+          own runner.
+        type: string
+        default: ubuntu-latest
+        required: false
 
 permissions:
   issues: write
@@ -36,7 +48,7 @@ concurrency:
 
 jobs:
   close-parent-if-children-done:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 5
     steps:
       - name: Close parent if all sub-issues are closed
