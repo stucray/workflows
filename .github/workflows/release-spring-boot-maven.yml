@@ -36,6 +36,8 @@
 # maven — used during the release-build verify.
 #
 # Java version: read from <java.version> in pom.xml (no input).
+# Runner: defaults to `ubuntu-latest`; override via the `runner_label` input
+# to run the release build on a self-hosted runner.
 
 name: Release (Spring Boot + Maven)
 
@@ -66,6 +68,14 @@ on:
         type: string
         default: liberica
         required: false
+      runner_label:
+        description: |
+          Label of the runner to execute on. Defaults to `ubuntu-latest`
+          (GitHub-hosted). Set to a self-hosted runner's label to run the
+          release build on your own runner.
+        type: string
+        default: ubuntu-latest
+        required: false
     secrets:
       release_token:
         description: PAT with contents:write that can bypass branch protection on main.
@@ -88,7 +98,7 @@ concurrency:
 jobs:
   release:
     name: cut release
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 25
     env:
       # Used by `gh release create` at the end.
