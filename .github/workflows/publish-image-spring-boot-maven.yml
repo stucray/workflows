@@ -19,6 +19,15 @@
 #       with:
 #         version_ref: ${{ inputs.version_ref }}
 #
+# MULTI-MODULE REACTORS MUST NAME THEIR APPLICATION MODULE:
+#
+#       with:
+#         module: backend
+#
+# Without it the goal runs on every module in the reactor, which is wrong even
+# when it succeeds — library modules get images nobody asked for — and fails
+# outright when any of them has zero or several `main()` classes.
+#
 # Image: `ghcr.io/<github.repository>` (no input — derived from caller repo).
 # Java + BP_JVM_VERSION: read from `<java.version>` in pom.xml.
 #
@@ -39,6 +48,15 @@ on:
         type: string
         required: false
         default: ''
+      module:
+        description: |
+          Maven module holding the `@SpringBootApplication`, as an artifactId or
+          a relative path, for a multi-module reactor. Leave blank for a
+          single-module project, which is what this workflow assumed until it
+          met one that was not.
+        type: string
+        default: ''
+        required: false
       java_distribution:
         description: |
           actions/setup-java `distribution` value used for the local JDK that
@@ -113,12 +131,40 @@ jobs:
 
       # Paketo builds for the runner's host arch. Tests are skipped here —
       # CI already ran them; this step is purely packaging.
+      #
+      # Inputs travel through `env:` rather than being interpolated into the
+      # script: `${{ }}` inside `run:` is textual substitution, and a caller's
+      # string has no business being parsed as shell.
       - name: Build image with Paketo buildpacks
+        env:
+          MODULE: ${{ inputs.module }}
+          IMAGE: ghcr.io/${{ github.repository }}:tmp-${{ github.run_id }}-${{ matrix.arch }}
+          JVM_VERSION: ${{ steps.jv.outputs.version }}
         run: |
-          ./mvnw -B -ntp spring-boot:build-image \
+          set -euo pipefail
+          # Positional parameters and not an array: `"${arr[@]}"` on an EMPTY
+          # array is an "unbound variable" error under `set -u` before bash 4.4,
+          # and the empty case is the one every existing caller takes. `"$@"` is
+          # special-cased by the standard and expands to nothing, safely, back to
+          # bash 3.2 — so a runner older than the GitHub-hosted ones cannot break
+          # single-module publishing.
+          if [ -n "$MODULE" ]; then
+            # TWO STEPS, AND `-am` IS NOT THE FIRST OF THEM. `-pl <app> -am
+            # spring-boot:build-image` puts the sibling modules back in the
+            # reactor and runs the goal on them too — so a library with several
+            # `main()` classes fails the build outright ("Unable to find a single
+            # main class") and one with none produces an image nobody wanted.
+            # Installing first and imaging the one module that is an application
+            # says what is meant and cannot drift.
+            ./mvnw -B -ntp install -Dmaven.test.skip=true
+            set -- -pl "$MODULE"
+          else
+            set --
+          fi
+          ./mvnw -B -ntp "$@" spring-boot:build-image \
             -Dmaven.test.skip=true \
-            -Dspring-boot.build-image.imageName=ghcr.io/${{ github.repository }}:tmp-${{ github.run_id }}-${{ matrix.arch }} \
-            -Dspring-boot.build-image.env.BP_JVM_VERSION=${{ steps.jv.outputs.version }}
+            -Dspring-boot.build-image.imageName="$IMAGE" \
+            -Dspring-boot.build-image.env.BP_JVM_VERSION="$JVM_VERSION"
 
       - name: Push single-arch image
         run: docker push ghcr.io/${{ github.repository }}:tmp-${{ github.run_id }}-${{ matrix.arch }}
